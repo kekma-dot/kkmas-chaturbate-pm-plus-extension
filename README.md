@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/github-logo-lockup.svg" alt="KKMA's Chaturbate PM+ Extension" width="900">
+</p>
+
 # KKMA's Chaturbate PM+ Extension
 
 Private beta Chrome extension for multi-window PM chats on Chaturbate.
