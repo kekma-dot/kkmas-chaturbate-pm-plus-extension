@@ -4,7 +4,7 @@
 
 # KKMA's Chaturbate PM+ Extension
 
-Private beta Chrome extension for multi-window PM chats on Chaturbate.
+Beta Chrome extension for multi-window PM chats on Chaturbate.
 
 Version: `0.5 Beta` (`0.5.0` in `manifest.json`).
 
