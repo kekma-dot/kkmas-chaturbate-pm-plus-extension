@@ -4,134 +4,49 @@
 
 # KKMA's Chaturbate PM+ Extension
 
-Beta Chrome extension for multi-window PM chats on Chaturbate.
+An unofficial Chrome extension that adds a compact multi-window PM workflow to Chaturbate.
 
-Version: `0.5 Beta` (`0.5.0` in `manifest.json`).
+PM+ is built for operators who need to follow several private conversations at the same time without losing the room page context. It adds a small `PM+` action to a user popover and opens bottom-docked chat windows for selected members.
 
-## What works now
+Current version: `0.5 Beta`
 
-- Injects a `PM+` action into the native Chaturbate user popover.
-- Opens up to 4 floating PM windows at once when the viewport has enough usable width.
-- Pins chat windows to the bottom of the page, Stripchat-style.
-- Supports minimize, close, unread counters, and local UI-state persistence.
-- Supports multiline compose input that grows while typing long messages and preserves caret position after focus leaves the extension.
-- Preserves Chaturbate emoticon shortcuts such as `:heart` when sending through the native PM input.
-- Shows a small emoticon autocomplete menu in the demo and, on Chaturbate, reads real suggestions from the page-owned `/api/ts/emoticons/autocomplete/` endpoint.
-- Does not auto-open generic native PM roots such as `PM 1`; floating user PM windows open from an explicit `PM+` action.
-- Trims extra floating windows on zoom/resize when they cannot fit cleanly; unsent drafts from trimmed windows stay only in page memory.
-- Works on the included demo page through `data-cbm-*` attributes.
-- Includes a cautious Chaturbate DOM adapter that tries to read visible PM-like DOM only.
-- Emits privacy-redacted, PM-scoped media diagnostics for the next photo spike.
+## Features
 
-## What this prototype does not do
+- Open multiple PM windows from the native user popover.
+- Keep up to 4 floating chats visible when the screen has enough space.
+- Dock chat windows neatly along the bottom of the page.
+- Minimize, close, and track unread messages.
+- Send messages through the native Chaturbate PM interface.
+- Use multiline compose input for longer replies.
+- Keep Chaturbate emoticon shortcuts such as `:heart`.
+- Avoid generic auto-opened windows like `PM 1` / `PM 2`.
 
-- Does not store passwords, cookies, tokens, payment data, camera, or video.
-- Does not send PM text to any server.
-- Does not automate mass messaging.
-- Does not call third-party servers for PM or emoticon data.
-- Does not download, unblur, save, copy, or directly fetch PM photos or media URLs.
+## Privacy & Safety
 
-## Install locally
+PM+ is designed as a local browser tool.
 
-1. Open `chrome://extensions`.
-2. Enable `Developer mode`.
-3. Click `Load unpacked`.
-4. Select the cloned repository folder or an extracted release ZIP folder that contains `manifest.json`.
+- No external servers.
+- No passwords, cookies, tokens, payment data, camera data, or video access.
+- No PM text upload.
+- No mass messaging or auto-reply system.
+- No downloading, unblurring, saving, or direct fetching of PM photos/media URLs.
 
-```text
-kkmas-chaturbate-pm-plus-extension
-```
+## Installation
 
-## Test with demo page
+1. Download the latest ZIP from [Releases](https://github.com/kekma-dot/kkmas-chaturbate-pm-plus-extension/releases/latest).
+2. Unzip the downloaded file.
+3. Open `chrome://extensions` in Google Chrome.
+4. Enable `Developer mode`.
+5. Click `Load unpacked`.
+6. Select the unzipped folder that contains `manifest.json`.
+7. Open Chaturbate, click a username, then click `PM+` in the user popover.
 
-1. In `chrome://extensions`, open this extension's details.
-2. Enable `Allow access to file URLs`.
-3. Open the demo page from the repository:
+## Status
 
-```text
-demo/demo.html
-```
+This is an early beta release. It is not available in the Chrome Web Store yet.
 
-4. Find the native-like user popover in the right column.
-5. Click `PM+`.
-6. Click `Simulate incoming PM` to test unread updates.
-7. Type `:h` in the PM+ compose input, then use `ArrowDown` and `Enter` to insert a demo emoticon shortcut.
-8. Type a long message in the compose input and check that it wraps into multiple lines instead of sliding horizontally.
+Chaturbate can change its page structure at any time, so parts of the extension may need updates after site changes. PM photo/media support is intentionally limited for safety: the extension does not download or bypass media access controls.
 
-## Next real-site spike
+## Disclaimer
 
-1. Open the Chaturbate broadcaster page in Chrome with the extension loaded.
-2. Click a member nickname in the native users/chat list.
-3. In the native Chaturbate popover, click `PM+`.
-4. Check that a bottom-docked chat window opens for that username.
-5. Open the native `Send private message` or `Send direct message` action once.
-6. Run the page-console bridge in DevTools:
-
-```js
-document.dispatchEvent(new CustomEvent("CBM_COPY_DIAGNOSTICS"));
-document.documentElement.getAttribute("data-cbm-diagnostics");
-```
-
-7. Update `src/chaturbate-adapter.js` selectors from the sanitized diagnostics output.
-
-If you switch the DevTools console context from the page to the extension content script, this
-direct helper also works:
-
-```js
-window.CBMultichatDebug.diagnosticsText();
-window.CBMultichatDebug.layoutDiagnostics();
-```
-
-## PM photo diagnostic spike
-
-Photo support is not shipped yet. The safe next step is to collect sanitized native PM media
-diagnostics with two controlled accounts before adding attachment parsing or UI cards.
-
-1. Account A sends one harmless test image to Account B through native Chaturbate PM.
-2. On Account B, do not open the photo yet.
-3. Run:
-
-```js
-document.dispatchEvent(new CustomEvent("CBM_COPY_DIAGNOSTICS"));
-document.documentElement.getAttribute("data-cbm-diagnostics");
-```
-
-4. Save the sanitized JSON and a screenshot of the native PM opened/unopened state.
-5. Open the photo using native Chaturbate UI only.
-6. Run the same diagnostics again.
-7. Confirm whether Account A sees the same opened-state transition as a normal native open.
-
-The JSON may include `mediaCandidates` with counts, class tokens, rectangles, status kinds,
-control kinds, and hashed image hosts. It must not include raw PM text, usernames, `src`, `href`,
-blob/base64 data, URL tokens, or full media URLs.
-
-## Diagnostics privacy contract
-
-`src/diagnostics.js` emits selector candidates, dimensions, class tokens, hashed ids, input/control
-kinds, and message-like counts. It must not emit raw message text, usernames, page titles, cookies,
-tokens, or raw URLs.
-
-For emoticons, diagnostics also emits only visible popup structure: selector classes, dimensions,
-child/item counts, item classes, and hashed preview image hosts. It must not emit surrounding PM
-text or raw popup text. Runtime autocomplete calls Chaturbate's own page endpoint and caches only
-session suggestions returned by Chaturbate.
-
-For PM media, diagnostics is scoped to PM candidate roots/message rows only. It reports structural
-media candidates and hashed image hosts so we can learn the DOM shape without collecting images,
-raw media URLs, or private message contents.
-
-## Current known gap
-
-The extension now has a first native Chaturbate PM bridge based on live diagnostics:
-
-- PM root: `.ChatTabContents.TheatermodeChatDivPm`
-- message list: `.msg-list-fvm.message-list`
-- message nodes: `.msg-text`
-- PM input: `.theatermodeInputFieldPm[contenteditable="true"]`
-- send button: `button.SendButton.SplitMode.pm`
-
-The next real-site check is whether reload keeps generic `PM 1` windows closed, clicking
-`PM+` opens only the selected username, send stays fully visible at different browser zoom
-levels, extra windows close cleanly when the viewport cannot fit them, and `:h` still returns
-Chaturbate API suggestions. PM photo UI must wait until the controlled-account media diagnostic
-spike proves a safe DOM-visible attachment shape and native opened-state behavior.
+This project is unofficial and is not affiliated with, endorsed by, or sponsored by Chaturbate.
