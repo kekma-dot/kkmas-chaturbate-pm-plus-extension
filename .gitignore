@@ -1,0 +1,16 @@
+.DS_Store
+*.log
+.env
+.env.*
+node_modules/
+coverage/
+
+# Local agent/system files must not be committed to the extension repository.
+.claude/
+.codex/
+.agents/
+.gstack/
+AGENTS.md
+
+# Temporary package staging; release ZIPs in dist/ are intentionally tracked.
+dist/package/

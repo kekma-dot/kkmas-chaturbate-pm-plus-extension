@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>KKMA's Chaturbate PM+ Demo</title>
+    <style>
+      body {
+        background: #101113;
+        color: #f7f7f8;
+        font-family: Arial, Helvetica, sans-serif;
+        margin: 0;
+      }
+
+      .topbar {
+        align-items: center;
+        background: #a91f2b;
+        display: flex;
+        height: 58px;
+        gap: 18px;
+        padding: 0 22px;
+      }
+
+      .user-popover {
+        background: #fff;
+        border-radius: 6px;
+        box-shadow: 0 3px 18px rgba(0, 0, 0, 0.35);
+        color: #333;
+        margin: 24px 0;
+        overflow: hidden;
+        width: 380px;
+      }
+
+      .user-popover a,
+      .user-popover button,
+      .user-popover .action {
+        align-items: center;
+        background: white;
+        border: 0;
+        border-top: 1px solid #eee;
+        color: #444;
+        display: flex;
+        font: inherit;
+        min-height: 42px;
+        padding: 8px 20px;
+        text-align: left;
+        width: 100%;
+      }
+
+      .user-popover a {
+        color: #1a5cff;
+        font-weight: 700;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 1fr 360px;
+        gap: 14px;
+        padding: 18px;
+      }
+
+      .stage,
+      .public-chat,
+      [data-cbm-chat] {
+        background: #2b2d31;
+        border: 1px solid #3e4249;
+      }
+
+      .stage {
+        display: grid;
+        min-height: 520px;
+        place-items: center;
+      }
+
+      .public-chat {
+        min-height: 520px;
+        padding: 14px;
+      }
+
+      .demo-pms {
+        display: grid;
+        gap: 10px;
+        grid-column: 1 / -1;
+        grid-template-columns: repeat(4, minmax(220px, 1fr));
+      }
+
+      [data-cbm-chat] {
+        min-height: 130px;
+        padding: 12px;
+      }
+
+      [data-cbm-message] {
+        background: #565b63;
+        border-radius: 12px;
+        margin: 8px 0;
+        padding: 8px 10px;
+      }
+
+      [data-cbm-direction="out"] {
+        background: #945559;
+        margin-left: 34px;
+      }
+
+      button {
+        background: #73a64b;
+        border: 0;
+        border-radius: 6px;
+        color: #fff;
+        cursor: pointer;
+        font: inherit;
+        padding: 9px 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="topbar">
+      <strong>CHaturbate-like demo page</strong>
+      <span>Load the extension unpacked, then use the native-like user popover.</span>
+      <button id="add-message">Simulate incoming PM</button>
+      <button id="copy-diagnostics">Copy PM diagnostics</button>
+    </div>
+
+    <main class="layout">
+      <section class="stage">
+        <h1>Broadcast preview placeholder</h1>
+      </section>
+      <aside class="public-chat">
+        <h2>Public chat</h2>
+        <p>This area is here to show how bottom-docked PM windows sit over the page.</p>
+        <div class="user-popover">
+          <a href="#">unsaid8935</a>
+          <div class="action">Send private message</div>
+          <div class="action">Send direct message</div>
+          <div class="action">Mention this user</div>
+          <div class="action">Add Trusted Viewer</div>
+        </div>
+      </aside>
+
+      <section class="demo-pms">
+        <div data-cbm-chat="Beko16" data-cbm-name="Beko16">
+          <strong>Beko16</strong>
+          <div data-cbm-message data-cbm-direction="in">come touch my feet...</div>
+          <div data-cbm-message data-cbm-direction="out">hii</div>
+        </div>
+
+        <div data-cbm-chat="youngbart" data-cbm-name="youngbart">
+          <strong>youngbart</strong>
+          <div data-cbm-message data-cbm-direction="out">Hello, I see you've been sitting here for a long time, how are you doing?</div>
+        </div>
+
+        <div data-cbm-chat="Zaka1we" data-cbm-name="Zaka1we">
+          <strong>Zaka1we</strong>
+          <div data-cbm-message data-cbm-direction="out">thank you for being with me today, I have to go</div>
+          <div data-cbm-message data-cbm-direction="in">bye angel. next time....</div>
+        </div>
+
+        <div data-cbm-chat="qtarousan1234" data-cbm-name="qtarousan1234">
+          <strong>qtarousan1234</strong>
+          <div data-cbm-message data-cbm-direction="in">come touch my feet...</div>
+          <div data-cbm-message data-cbm-direction="out">I didn't expect</div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const names = ["Beko16", "youngbart", "Zaka1we", "qtarousan1234"];
+      const samples = [
+        "are you here?",
+        "hi beauty",
+        "can we talk?",
+        "next time private?",
+        "I missed you"
+      ];
+
+      document.querySelector("#add-message").addEventListener("click", () => {
+        const name = names[Math.floor(Math.random() * names.length)];
+        const root = document.querySelector(`[data-cbm-chat="${name}"]`);
+        const message = document.createElement("div");
+        message.dataset.cbmMessage = "true";
+        message.dataset.cbmDirection = "in";
+        message.textContent = samples[Math.floor(Math.random() * samples.length)];
+        root.appendChild(message);
+      });
+
+      document.querySelector("#copy-diagnostics").addEventListener("click", async () => {
+        document.dispatchEvent(new CustomEvent("CBM_COPY_DIAGNOSTICS"));
+        const diagnostics = document.documentElement.getAttribute("data-cbm-diagnostics") || "{}";
+        console.log("Diagnostics copied:", diagnostics.slice(0, 120));
+      });
+    </script>
+  </body>
+</html>
