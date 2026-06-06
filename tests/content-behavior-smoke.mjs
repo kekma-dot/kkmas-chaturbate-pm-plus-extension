@@ -7,6 +7,7 @@ const projectRoot = path.resolve(import.meta.dirname, "..");
 const scriptPaths = [
   "src/storage.js",
   "src/diagnostics.js",
+  "src/chat-store.js",
   "src/chaturbate-adapter.js",
   "src/emoticons.js",
   "src/compose.js",

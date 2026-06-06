@@ -76,6 +76,11 @@
 		      copyDiagnostics: window.CBMultichatDiagnostics?.copyDiagnostics,
 		      collectDiagnostics: window.CBMultichatDiagnostics?.collect,
 		      diagnosticsText: window.CBMultichatDiagnostics?.diagnosticsText,
+		      copyNetworkDiagnostics: window.CBMultichatNetworkProbeDiagnostics?.copyDiagnostics,
+		      networkDiagnosticsText: window.CBMultichatNetworkProbeDiagnostics?.diagnosticsText,
+		      enableNetworkProbeForNextReload: window.CBMultichatNetworkProbeDiagnostics?.enableForNextReload,
+		      disableNetworkProbeForNextReload: window.CBMultichatNetworkProbeDiagnostics?.disableForNextReload,
+		      clearNetworkDiagnostics: window.CBMultichatNetworkProbeDiagnostics?.clear,
 		      layoutDiagnostics: collectLayoutDiagnostics
 		    };
 		  }

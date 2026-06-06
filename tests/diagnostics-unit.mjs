@@ -163,6 +163,45 @@ context.globalThis = context.window;
 context.window.document = fakeDocument;
 context.window.console = console;
 context.window.navigator = context.navigator;
+context.window.CBMultichatNetworkProbeDiagnostics = {
+  snapshot: () => ({
+    enabledForCurrentPage: true,
+    enabledForNextReload: true,
+    injected: true,
+    lateAttach: false,
+    eventCount: 1,
+    lastEventAt: 123,
+    errorKind: "other",
+    events: [
+      {
+        kind: "websocket",
+        phase: "message",
+        direction: "in",
+        method: "POST",
+        url: {
+          kind: "same-origin",
+          scheme: "wss",
+          hostHash: "h123safe",
+          pathHash: "h456safe",
+          raw: "wss://chaturbate.com/ws?token=super-secret"
+        },
+        payload: {
+          kind: "object",
+          size: 72,
+          truncated: false,
+          topLevelKeyKinds: ["message", "user", "secret", "raw-secret-key"],
+          hasMessageText: true,
+          hasThreadId: true,
+          hasUsername: true,
+          hasSecretKey: true,
+          rawText: "come touch my feet private note",
+          username: "unsaid8935"
+        },
+        rawMessage: "come touch my feet private note"
+      }
+    ]
+  })
+};
 
 const source = fs.readFileSync(diagnosticsPath, "utf8");
 vm.runInNewContext(source, context, { filename: diagnosticsPath });
@@ -173,6 +212,9 @@ const text = context.window.CBMultichatDiagnostics.diagnosticsText({ root: fakeD
 
 assert.equal(diagnostics.version, 1);
 assert.equal(diagnostics.candidates.length, 1);
+assert.equal(diagnostics.networkProbe.enabledForCurrentPage, true);
+assert.equal(diagnostics.networkProbe.events.length, 1);
+assert.deepEqual(JSON.parse(JSON.stringify(diagnostics.networkProbe.events[0].payload.topLevelKeyKinds)), ["message", "user", "secret", "other"]);
 assert.equal(diagnostics.candidates[0].tag, "section");
 assert.equal(diagnostics.candidates[0].controls[0].textKind, "send-private-message");
 assert.equal(diagnostics.candidates[0].inputs.length, 1);
@@ -198,6 +240,8 @@ assert(!serialized.includes("full-size"), "media diagnostics must not include ra
 assert(!serialized.includes("super-secret"), "media diagnostics must not include URL tokens");
 assert(!serialized.includes("outside.example"), "media diagnostics must stay scoped to PM roots");
 assert(!serialized.includes("Secret room title"), "diagnostics must not include document title");
+assert(!serialized.includes("raw-secret-key"), "network diagnostics must not include unknown raw key strings");
+assert(!serialized.includes("rawMessage"), "network diagnostics must not include unknown raw event fields");
 assert.equal(typeof text, "string");
 assert(text.includes("\"version\": 1"));
 assert(!text.includes("come touch my feet"), "diagnostics text must not include message text");

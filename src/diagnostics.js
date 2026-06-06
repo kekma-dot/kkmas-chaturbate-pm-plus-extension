@@ -56,6 +56,7 @@
       mediaSelectors: MEDIA_SELECTORS,
       mediaCandidates,
       emoticonPopups,
+      networkProbe: describeNetworkProbe(),
       candidates
     };
   }
@@ -447,6 +448,81 @@
 
   function uniqueValues(values) {
     return Array.from(new Set(values));
+  }
+
+  function describeNetworkProbe() {
+    const snapshot = window.CBMultichatNetworkProbeDiagnostics?.snapshot?.();
+    if (!snapshot) return null;
+
+    return {
+      version: 1,
+      enabledForCurrentPage: snapshot.enabledForCurrentPage === true,
+      enabledForNextReload: snapshot.enabledForNextReload === true,
+      injected: snapshot.injected === true,
+      lateAttach: snapshot.lateAttach === true,
+      eventCount: clampNumber(snapshot.eventCount, 0, 10000),
+      lastEventAt: clampNumber(snapshot.lastEventAt, 0, Number.MAX_SAFE_INTEGER),
+      errorKind: allow(snapshot.errorKind, ["type", "security", "other", ""], ""),
+      events: Array.isArray(snapshot.events)
+        ? snapshot.events.slice(0, 80).map(sanitizeNetworkEvent)
+        : []
+    };
+  }
+
+  function sanitizeNetworkEvent(event = {}) {
+    return {
+      kind: allow(event.kind, ["websocket", "fetch", "xhr", "probe"], "probe"),
+      phase: allow(event.phase, ["open", "send", "message", "request", "response", "response-payload", "error"], "error"),
+      direction: allow(event.direction, ["in", "out", ""], ""),
+      method: allow(event.method, ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD", ""], ""),
+      url: sanitizeNetworkUrl(event.url),
+      status: clampNumber(event.status, 0, 999),
+      contentTypeKind: allow(event.contentTypeKind, ["json", "text", "form", "media", "other", ""], ""),
+      payload: sanitizeNetworkPayload(event.payload),
+      errorKind: allow(event.errorKind, ["type", "security", "other", ""], ""),
+      at: clampNumber(event.at, 0, Number.MAX_SAFE_INTEGER)
+    };
+  }
+
+  function sanitizeNetworkUrl(url = {}) {
+    return {
+      kind: allow(url.kind, ["same-origin", "chaturbate", "external", "unknown"], "unknown"),
+      scheme: allow(url.scheme, ["http", "https", "ws", "wss", ""], ""),
+      hostHash: safeHash(url.hostHash),
+      pathHash: safeHash(url.pathHash)
+    };
+  }
+
+  function sanitizeNetworkPayload(payload = {}) {
+    const keyKinds = Array.isArray(payload.topLevelKeyKinds)
+      ? payload.topLevelKeyKinds.map((kind) => allow(kind, ["message", "thread", "user", "room", "event", "id", "secret", "other"], "other"))
+      : [];
+    return {
+      kind: allow(payload.kind, ["empty", "string", "binary", "blob", "form", "object", "other"], "other"),
+      size: clampNumber(payload.size, 0, Number.MAX_SAFE_INTEGER),
+      truncated: payload.truncated === true,
+      topLevelKeyKinds: uniqueValues(keyKinds).slice(0, 24),
+      hasMessageText: payload.hasMessageText === true,
+      hasThreadId: payload.hasThreadId === true,
+      hasUsername: payload.hasUsername === true,
+      hasSecretKey: payload.hasSecretKey === true
+    };
+  }
+
+  function allow(value, allowed, fallback) {
+    const text = String(value || "");
+    return allowed.includes(text) ? text : fallback;
+  }
+
+  function clampNumber(value, min, max) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return 0;
+    return Math.max(min, Math.min(max, Math.round(number)));
+  }
+
+  function safeHash(value) {
+    const text = String(value || "");
+    return /^h[a-z0-9]+$/i.test(text) ? text.slice(0, 32) : "";
   }
 
   function hashValue(value) {

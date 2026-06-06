@@ -3,8 +3,8 @@
   "name": "KKMA's Chaturbate PM+ Extension",
   "short_name": "Chaturbate PM+",
   "description": "Private beta extension for multi-window PM chat on Chaturbate.",
-  "version": "0.5.0",
-  "version_name": "0.5 Beta",
+  "version": "0.5.1",
+  "version_name": "0.5.1 Beta",
   "permissions": ["storage"],
   "host_permissions": [
     "https://*.chaturbate.com/*",
@@ -16,9 +16,26 @@
         "https://*.chaturbate.com/*",
         "file:///*"
       ],
+      "js": ["src/network-probe-loader.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://*.chaturbate.com/*",
+        "file:///*"
+      ],
       "css": ["styles/content.css"],
-      "js": ["src/storage.js", "src/diagnostics.js", "src/chaturbate-adapter.js", "src/emoticons.js", "src/compose.js", "src/content.js"],
+      "js": ["src/storage.js", "src/diagnostics.js", "src/chat-store.js", "src/chaturbate-adapter.js", "src/emoticons.js", "src/compose.js", "src/content.js"],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/network-probe-page.js"],
+      "matches": [
+        "https://*.chaturbate.com/*",
+        "file:///*"
+      ]
     }
   ]
 }

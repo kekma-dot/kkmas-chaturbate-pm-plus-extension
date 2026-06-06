@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1 Beta - 2026-06-06
+
+- Added an opt-in network diagnostics probe for controlled Chaturbate PM debugging.
+- Added deterministic redaction for network metadata: no PM text, usernames, tokens, cookies, raw URLs, or full payloads.
+- Added a pure `ChatStore` module for future DOM/network message merging without storing DOM nodes.
+- Kept the normal extension runtime DOM-only when diagnostics are disabled.
+
 ## 0.5 Beta - 2026-06-06
 
 - Rebranded the extension as `KKMA's Chaturbate PM+ Extension`.

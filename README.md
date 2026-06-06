@@ -8,7 +8,7 @@ An unofficial Chrome extension that adds a compact multi-window PM workflow to C
 
 PM+ is built for operators who need to follow several private conversations at the same time without losing the room page context. It adds a small `PM+` action to a user popover and opens bottom-docked chat windows for selected members.
 
-Current version: `0.5 Beta`
+Current version: `0.5.1 Beta`
 
 ## Features
 
@@ -20,6 +20,7 @@ Current version: `0.5 Beta`
 - Use multiline compose input for longer replies.
 - Keep Chaturbate emoticon shortcuts such as `:heart`.
 - Avoid generic auto-opened windows like `PM 1` / `PM 2`.
+- Copy opt-in, privacy-redacted network diagnostics for controlled live debugging.
 
 ## Privacy & Safety
 
@@ -28,6 +29,7 @@ PM+ is designed as a local browser tool.
 - No external servers.
 - No passwords, cookies, tokens, payment data, camera data, or video access.
 - No PM text upload.
+- Network diagnostics are disabled by default and keep only sanitized metadata in memory.
 - No mass messaging or auto-reply system.
 - No downloading, unblurring, saving, or direct fetching of PM photos/media URLs.
 

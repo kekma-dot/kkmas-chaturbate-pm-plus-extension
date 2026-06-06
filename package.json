@@ -1,0 +1,12 @@
+{
+  "name": "kkmas-chaturbate-pm-plus-extension",
+  "version": "0.5.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/run-all.mjs",
+    "test:unit": "node tests/run-all.mjs --unit",
+    "test:smoke": "node tests/content-behavior-smoke.mjs",
+    "check": "node tests/run-all.mjs --check"
+  }
+}
