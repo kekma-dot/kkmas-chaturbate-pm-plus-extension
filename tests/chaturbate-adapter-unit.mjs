@@ -7,16 +7,25 @@ const projectRoot = path.resolve(import.meta.dirname, "..");
 const adapterPath = path.join(projectRoot, "src", "chaturbate-adapter.js");
 
 class FakeElement {
-  constructor({ tagName = "div", className = "", textContent = "", children = [] } = {}) {
+  constructor({ tagName = "div", className = "", textContent = "", children = [], attributes = {} } = {}) {
     this.tagName = tagName.toUpperCase();
     this.className = className;
+    this.nodeType = 1;
     this.textContent = textContent;
     this.children = children;
+    this.childNodes = children;
+    this.attributes = { ...attributes };
     this.parentElement = null;
     this.isConnected = true;
     this.isContentEditable = className.includes("customInput");
     this.clicked = false;
     this.dispatchedEvents = [];
+    this.src = attributes.src || "";
+    this.currentSrc = attributes.currentSrc || attributes.src || "";
+    this.alt = attributes.alt || "";
+    this.title = attributes.title || "";
+    this.width = Number(attributes.width) || 0;
+    this.height = Number(attributes.height) || 0;
     children.forEach((child) => {
       child.parentElement = this;
     });
@@ -32,7 +41,7 @@ class FakeElement {
   getAttribute(name) {
     if (name === "class") return this.className;
     if (name === "type") return this.type || "";
-    return "";
+    return this.attributes[name] || "";
   }
 
   getBoundingClientRect() {
@@ -87,28 +96,42 @@ class FakeElement {
     if (selector.includes("a, button")) {
       return all.filter((node) => ["A", "BUTTON", "DIV", "SPAN"].includes(node.tagName));
     }
+    if (selector.includes("img")) {
+      return all.filter((node) => node.tagName === "IMG");
+    }
     if (selector.includes("theatermodeInputFieldPm") || selector.includes("contenteditable")) {
-      return all.filter((node) => node.className.includes("theatermodeInputFieldPm"));
+      return all.filter((node) => String(node.className || "").includes("theatermodeInputFieldPm"));
     }
     if (selector.includes("SendButton")) {
-      return all.filter((node) => node.className.includes("SendButton"));
+      return all.filter((node) => String(node.className || "").includes("SendButton"));
     }
     if (selector.includes(".modalItem")) {
-      return all.filter((node) => node.className.includes("modalItem"));
+      return all.filter((node) => String(node.className || "").includes("modalItem"));
     }
     if (selector.includes(".tag-text")) {
-      return all.filter((node) => node.className.includes("tag-text"));
+      return all.filter((node) => String(node.className || "").includes("tag-text"));
     }
     if (selector.includes("autocomplete")) {
-      return all.filter((node) => node.className.includes("autocomplete"));
+      return all.filter((node) => String(node.className || "").includes("autocomplete"));
     }
     if (selector.includes(".msg-text")) {
-      return all.filter((node) => node.className.includes("msg-text"));
+      return all.filter((node) => String(node.className || "").includes("msg-text"));
     }
     if (selector.includes(".message-list")) {
-      return all.filter((node) => node.className.includes("message-list"));
+      return all.filter((node) => String(node.className || "").includes("message-list"));
     }
     return [];
+  }
+}
+
+class FakeText {
+  constructor(text) {
+    this.nodeType = 3;
+    this.nodeValue = text;
+    this.textContent = text;
+    this.children = [];
+    this.childNodes = [];
+    this.parentElement = null;
   }
 }
 
@@ -171,6 +194,76 @@ const loadingMessageText = new FakeElement({
   className: "msg-text dm-adjust",
   textContent: "Loading More Messages"
 });
+const emoticonImage = new FakeElement({
+  tagName: "img",
+  className: "emoticonImage",
+  attributes: {
+    src: "https://static-pub.highwebmedia.com/emoticons/hihi.gif",
+    alt: ":hihi",
+    width: "25",
+    height: "25"
+  }
+});
+const emoticonOnlyText = new FakeElement({
+  className: "msg-text dm-adjust",
+  textContent: ":hihi",
+  children: [emoticonImage]
+});
+const newBadge = new FakeElement({
+  tagName: "span",
+  className: "new-message-badge",
+  textContent: "New",
+  children: [new FakeText("New")]
+});
+const roseEmoji = new FakeElement({
+  tagName: "img",
+  className: "emoji",
+  attributes: {
+    src: "https://static-pub.highwebmedia.com/emoji/rose.png",
+    alt: "\u{1F339}",
+    width: "18",
+    height: "18"
+  }
+});
+const emojiMessageText = new FakeElement({
+  className: "msg-text dm-adjust",
+  textContent: "NewFor you \u{1F339}",
+  children: [newBadge, new FakeText("For you "), roseEmoji]
+});
+const newOnlyText = new FakeElement({
+  className: "msg-text dm-adjust",
+  textContent: "New",
+  children: [new FakeElement({
+    tagName: "span",
+    className: "new-message-badge",
+    textContent: "New",
+    children: [new FakeText("New")]
+  })]
+});
+let photoOpenCount = 0;
+const photoNewBadge = new FakeElement({
+  tagName: "span",
+  className: "new-message-badge",
+  textContent: "New",
+  children: [new FakeText("New")]
+});
+const photoImage = new FakeElement({
+  tagName: "img",
+  className: "pm-photo-thumbnail private-media-preview",
+  attributes: {
+    src: "https://media-secret.chaturbate.test/private/raw-member-photo.jpg?token=super-secret",
+    width: "96",
+    height: "80"
+  }
+});
+photoImage.onClick = () => {
+  photoOpenCount += 1;
+};
+const photoMessageText = new FakeElement({
+  className: "msg-text dm-adjust",
+  textContent: "New",
+  children: [photoNewBadge, photoImage]
+});
 const message = new FakeElement({
   className: "msg-row",
   textContent: "unsaid8935hello from PM",
@@ -191,9 +284,29 @@ const loadingMessage = new FakeElement({
   textContent: "Loading More Messages",
   children: [loadingMessageText]
 });
+const emoticonOnlyMessage = new FakeElement({
+  className: "msg-row",
+  textContent: "unsaid8935:hihi",
+  children: [emoticonOnlyText]
+});
+const emojiMessage = new FakeElement({
+  className: "msg-row",
+  textContent: "unsaid8935NewFor you \u{1F339}",
+  children: [emojiMessageText]
+});
+const photoMessage = new FakeElement({
+  className: "msg-row photo-attachment unopened-media",
+  textContent: "unsaid8935New",
+  children: [photoMessageText]
+});
+const newOnlyMessage = new FakeElement({
+  className: "msg-row",
+  textContent: "unsaid8935New",
+  children: [newOnlyText]
+});
 const messageList = new FakeElement({
   className: "msg-list-fvm message-list",
-  children: [message, ownMessage, systemMessage, loadingMessage]
+  children: [message, ownMessage, systemMessage, loadingMessage, emoticonOnlyMessage, emojiMessage, photoMessage, newOnlyMessage]
 });
 const pmRoot = new FakeElement({
   className: "ChatTabContents TheatermodeChatDivPm",
@@ -305,13 +418,108 @@ assert.equal(dmAvailable, false);
 assert.deepEqual(nativeAction.dispatchedEvents.slice(0, 4), ["pointerdown", "mousedown", "mouseup", "click"]);
 assert.equal(chat.id, "unsaid8935");
 assert.equal(chat.root, pmRoot);
-assert.equal(chat.messages.length, 2);
+assert.equal(chat.messages.length, 5);
 assert.equal(chat.messages[0].text, "hello from PM");
 assert.equal(chat.messages[0].direction, "in");
 assert.equal(chat.messages[0].from, "unsaid8935");
 assert.equal(chat.messages[1].text, "Bless you");
 assert.equal(chat.messages[1].direction, "out");
 assert.equal(chat.messages[1].from, "evervessi");
+assert.equal(chat.messages[2].text, ":hihi");
+assert.deepEqual(JSON.parse(JSON.stringify(chat.messages[2].parts || null)), [
+  {
+    type: "image",
+    kind: "emoticon",
+    src: "https://static-pub.highwebmedia.com/emoticons/hihi.gif",
+    alt: ":hihi",
+    title: "",
+    width: 25,
+    height: 25
+  }
+]);
+assert.equal(chat.messages[3].text, "For you \u{1F339}");
+assert(!chat.messages[3].text.includes("New"), "service New badge must not become message text");
+assert.deepEqual(JSON.parse(JSON.stringify(chat.messages[3].parts || null)), [
+  { type: "text", text: "For you " },
+  {
+    type: "image",
+    kind: "emoji",
+    src: "https://static-pub.highwebmedia.com/emoji/rose.png",
+    alt: "\u{1F339}",
+    title: "",
+    width: 18,
+    height: 18
+  }
+]);
+assert.equal(chat.messages[4].text, "", "photo-only messages must not render service New as text");
+assert.deepEqual(JSON.parse(JSON.stringify(chat.messages[4].parts || null)), []);
+assert.deepEqual(JSON.parse(JSON.stringify(chat.messages[4].attachments || null)), [
+  {
+    id: "photo-6-0",
+    type: "photo",
+    state: "unopened",
+    previewPolicy: "visible-thumbnail",
+    previewUrl: "https://media-secret.chaturbate.test/private/raw-member-photo.jpg?token=super-secret",
+    previewIsBlurred: true,
+    actionKind: "open-photo",
+    nativeActionKey: "unsaid8935:6:0:open-photo"
+  }
+]);
+assert(!chat.messages[4].attachments[0].id.includes("media-secret"), "photo attachment ids must not expose raw media host");
+assert(!chat.messages[4].attachments[0].nativeActionKey.includes("super-secret"), "photo action keys must not expose URL tokens");
+const openPhotoResult = adapter.openAttachment(chat.id, chat.messages[4].id, chat.messages[4].attachments[0].id);
+assert.deepEqual(JSON.parse(JSON.stringify(openPhotoResult)), { ok: true });
+assert.equal(photoOpenCount, 1, "openAttachment must invoke the native photo action exactly once");
+assert.equal(fetchCalls.length, 0, "openAttachment must not fetch private media URLs");
+
+const mixedPhotoRow = new FakeElement({
+  className: "msg-row photo-attachment unopened-media",
+  textContent: "unsaid8935Here is me Open photo",
+  children: [new FakeElement({
+    className: "msg-text dm-adjust",
+    textContent: "Here is me Open photo",
+    children: [
+      new FakeText("Here is me "),
+      new FakeElement({
+        tagName: "img",
+        className: "pm-photo-thumbnail private-media-preview",
+        attributes: {
+          src: "https://media-secret.chaturbate.test/private/mixed-photo.jpg?token=super-secret"
+        }
+      }),
+      new FakeElement({
+        tagName: "button",
+        className: "pm-photo-open-control",
+        textContent: "Open photo"
+      })
+    ]
+  })]
+});
+const mixedParsed = adapter.parseMessageNode(mixedPhotoRow, "unsaid8935", 8);
+assert.equal(mixedParsed.text, "Here is me", "text next to PM photo attachments must survive parsing");
+assert.equal(mixedParsed.attachments.length, 1);
+
+const ownImageOnlyRow = new FakeElement({
+  className: "msg-row",
+  textContent: "evervessi",
+  children: [new FakeElement({
+    className: "msg-text dm-adjust",
+    textContent: "",
+    children: [new FakeElement({
+      tagName: "img",
+      className: "emoticonImage",
+      attributes: {
+        src: "https://static-pub.highwebmedia.com/emoticons/hihi.gif",
+        alt: ":hihi",
+        width: "25",
+        height: "25"
+      }
+    })]
+  })]
+});
+const ownImageOnlyParsed = adapter.parseMessageNode(ownImageOnlyRow, "unsaid8935", 9);
+assert.equal(ownImageOnlyParsed.direction, "out", "own image-only emoticons must keep outgoing direction");
+assert.equal(ownImageOnlyParsed.from, "evervessi");
 
 const sent = adapter.sendMessage("unsaid8935", "hello back");
 assert.equal(sent, true);

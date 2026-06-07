@@ -27,6 +27,7 @@
 	    composeSelections: new WeakMap(),
 	    pointerInsideRoot: false,
 	    drafts: new Map(),
+	    openingAttachments: new Set(),
 	    resizeQueued: false
 	  };
 
@@ -636,17 +637,29 @@
     };
   }
 
-	  function messageSignature(chat) {
-	    if (chat.error) return `error:${chat.error}`;
-	    return (chat.messages || [])
-	      .map((message) => `${message.id}:${message.direction}:${message.from || ""}`)
-	      .join("|");
-	  }
+		  function messageSignature(chat) {
+		    if (chat.error) return `error:${chat.error}`;
+		    return (chat.messages || [])
+		      .map((message) => `${message.id}:${message.direction}:${message.from || ""}:${message.text || ""}:${messagePartsSignature(message.parts)}:${messageAttachmentsSignature(message.attachments)}`)
+		      .join("|");
+		  }
 
-	  function cssEscape(value) {
-	    if (window.CSS?.escape) return window.CSS.escape(value);
-	    return String(value).replace(/["\\]/g, "\\$&");
-	  }
+		  function cssEscape(value) {
+		    if (window.CSS?.escape) return window.CSS.escape(value);
+		    return String(value).replace(/["\\]/g, "\\$&");
+		  }
+
+		  function messagePartsSignature(parts) {
+		    return (Array.isArray(parts) ? parts : [])
+		      .map((part) => part?.type === "image" ? `${part.kind || ""}:${part.alt || ""}:${part.src || ""}` : part?.text || "")
+		      .join("");
+		  }
+
+		  function messageAttachmentsSignature(attachments) {
+		    return (Array.isArray(attachments) ? attachments : [])
+		      .map((attachment) => `${attachment?.type || ""}:${attachment?.id || ""}:${attachment?.state || ""}:${attachment?.actionKind || ""}:${attachment?.previewPolicy || ""}`)
+		      .join("");
+		  }
 
   function startPopoverWatcher() {
     injectButtonsIntoPopovers();
@@ -749,18 +762,211 @@
 	      return;
 	    }
     messages.forEach((message) => {
-      const item = el("div", `cbm-message cbm-message-${message.direction === "out" ? "out" : "in"}`);
-      item.dataset.messageId = message.id;
-      const author = el("div", "cbm-message-author", messageAuthor(message, chat));
-      const bubble = el("div", "cbm-bubble");
-      bubble.textContent = message.text;
-      const meta = el("div", "cbm-message-meta", formatTime(message.ts));
-      item.appendChild(author);
+	      const item = el("div", `cbm-message cbm-message-${message.direction === "out" ? "out" : "in"}`);
+	      item.dataset.messageId = message.id;
+	      const author = el("div", "cbm-message-author", messageAuthor(message, chat));
+	      const bubble = el("div", "cbm-bubble");
+	      renderMessageContent(bubble, message, chat);
+	      const meta = el("div", "cbm-message-meta", formatTime(message.ts));
+	      item.appendChild(author);
       item.appendChild(bubble);
       item.appendChild(meta);
       root.appendChild(item);
-    });
-  }
+	    });
+	  }
+
+		  function renderMessageContent(bubble, message, chat) {
+		    const parts = normalizeRenderableParts(message);
+		    const attachments = normalizeRenderableAttachments(message);
+		    if (parts.length === 0 && attachments.length === 0) {
+		      bubble.textContent = message.text || "";
+		      return;
+		    }
+		    if (isImageOnlyMessage(parts, attachments)) {
+		      bubble.classList.add("cbm-bubble-image-only");
+		    }
+		    parts.forEach((part) => {
+		      if (part.type === "image") {
+		        const image = renderMessageImage(part);
+		        if (image) {
+		          bubble.appendChild(image);
+		          return;
+		        }
+		        if (part.alt || part.title) bubble.appendChild(document.createTextNode(part.alt || part.title));
+		        return;
+		      }
+		      if (part.text) bubble.appendChild(document.createTextNode(part.text));
+		    });
+		    attachments.forEach((attachment) => {
+		      bubble.appendChild(renderMessageAttachment(chat, message, attachment));
+		    });
+		  }
+
+		  function normalizeRenderableParts(message) {
+		    const parts = Array.isArray(message?.parts) ? message.parts : [];
+		    if (parts.length > 0) return parts.slice(0, 24).map(normalizeRenderablePart).filter(Boolean);
+		    const text = String(message?.text || "");
+		    return text ? [{ type: "text", text }] : [];
+		  }
+
+		  function normalizeRenderablePart(part) {
+		    if (!part || typeof part !== "object") return null;
+		    if (part.type === "image") {
+		      const src = safeImageSrc(part.src);
+		      if (!src) return null;
+		      return {
+		        type: "image",
+		        kind: part.kind === "emoji" ? "emoji" : "emoticon",
+		        src,
+		        alt: String(part.alt || "").slice(0, 80),
+		        title: String(part.title || "").slice(0, 80),
+		        width: clampImageSize(part.width),
+		        height: clampImageSize(part.height)
+		      };
+		    }
+		    const text = String(part.text || "");
+		    return text ? { type: "text", text } : null;
+		  }
+
+		  function isImageOnlyMessage(parts, attachments) {
+		    return attachments.length === 0 &&
+		      parts.length > 0 &&
+		      parts.every((part) => part.type === "image" || !String(part.text || "").trim());
+		  }
+
+		  function normalizeRenderableAttachments(message) {
+		    const attachments = Array.isArray(message?.attachments) ? message.attachments : [];
+		    return attachments.slice(0, 4).map(normalizeRenderableAttachment).filter(Boolean);
+		  }
+
+		  function normalizeRenderableAttachment(attachment) {
+		    if (!attachment || attachment.type !== "photo") return null;
+		    const id = String(attachment.id || "").slice(0, 80);
+		    if (!id) return null;
+		    const previewPolicy = attachment.previewPolicy === "visible-thumbnail" ? "visible-thumbnail" : "none";
+		    const previewUrl = previewPolicy === "visible-thumbnail" ? safeImageSrc(attachment.previewUrl) : "";
+		    return {
+		      id,
+		      type: "photo",
+		      state: ["unopened", "opened", "unknown"].includes(attachment.state) ? attachment.state : "unknown",
+		      previewPolicy,
+		      previewUrl,
+		      previewIsBlurred: attachment.previewIsBlurred === true || attachment.previewIsBlurred === false
+		        ? attachment.previewIsBlurred
+		        : "unknown",
+		      actionKind: attachment.actionKind === "open-photo" ? "open-photo" : ""
+		    };
+		  }
+
+		  function renderMessageAttachment(chat, message, attachment) {
+		    const card = el("div", `cbm-attachment-card cbm-photo-card cbm-photo-${attachment.state}`);
+		    card.dataset.attachmentId = attachment.id;
+		    const preview = el("div", "cbm-photo-preview");
+		    if (attachment.previewUrl) {
+		      const image = document.createElement("img");
+		      image.src = attachment.previewUrl;
+		      image.alt = "Photo";
+		      image.loading = "lazy";
+		      image.decoding = "async";
+		      image.referrerPolicy = "no-referrer";
+		      if (attachment.previewIsBlurred) image.classList.add("cbm-photo-blurred");
+		      preview.appendChild(image);
+		    } else {
+		      preview.textContent = "Photo";
+		    }
+
+		    const body = el("div", "cbm-photo-body");
+		    body.appendChild(el("div", "cbm-photo-title", "Photo received"));
+		    body.appendChild(el("div", "cbm-photo-state", photoStateText(attachment.state)));
+		    const action = el("button", "cbm-photo-action", attachment.state === "opened" ? "Open again" : "Open photo");
+		    action.type = "button";
+		    action.disabled = attachment.actionKind !== "open-photo";
+		    action.addEventListener("click", (event) => {
+		      event.preventDefault();
+		      event.stopPropagation();
+		      openMessageAttachment(chat, message, attachment, action);
+		    });
+		    if (attachment.actionKind === "open-photo") {
+		      preview.classList.add("cbm-photo-preview-clickable");
+		      preview.tabIndex = 0;
+		      preview.setAttribute("role", "button");
+		      preview.setAttribute("aria-label", "Open photo");
+		      preview.addEventListener("click", (event) => {
+		        event.preventDefault();
+		        event.stopPropagation();
+		        openMessageAttachment(chat, message, attachment, action);
+		      });
+		      preview.addEventListener("keydown", (event) => {
+		        if (event.key !== "Enter" && event.key !== " ") return;
+		        event.preventDefault();
+		        event.stopPropagation();
+		        openMessageAttachment(chat, message, attachment, action);
+		      });
+		    }
+		    body.appendChild(action);
+		    card.appendChild(preview);
+		    card.appendChild(body);
+		    return card;
+		  }
+
+		  function photoStateText(state) {
+		    if (state === "unopened") return "Unopened";
+		    if (state === "opened") return "Opened";
+		    return "Status unknown";
+		  }
+
+		  async function openMessageAttachment(chat, message, attachment, button) {
+		    const pendingKey = `${chat.id}:${message.id}:${attachment.id}`;
+		    if (state.openingAttachments.has(pendingKey)) return;
+		    state.openingAttachments.add(pendingKey);
+		    const previousText = button.textContent;
+		    button.disabled = true;
+		    button.textContent = "Opening...";
+		    try {
+		      const result = typeof adapter.openAttachment === "function"
+		        ? await adapter.openAttachment(chat.id, message.id, attachment.id)
+		        : { ok: false, error: "Photo action unavailable" };
+		      if (!result?.ok) {
+		        const windowNode = button.closest?.(".cbm-chat-window");
+		        if (windowNode) flash(windowNode, "Could not open photo from native PM");
+		      }
+		    } finally {
+		      state.openingAttachments.delete(pendingKey);
+		      if (button.isConnected) {
+		        button.disabled = attachment.actionKind !== "open-photo";
+		        button.textContent = previousText;
+		      }
+		    }
+		  }
+
+		  function renderMessageImage(part) {
+		    const image = document.createElement("img");
+		    image.className = `cbm-message-image cbm-message-image-${part.kind}`;
+		    image.dataset.kind = part.kind;
+		    image.src = part.src;
+		    image.alt = part.alt || part.title || "";
+		    image.title = part.title || part.alt || "";
+		    image.loading = "lazy";
+		    image.decoding = "async";
+		    image.referrerPolicy = "no-referrer";
+		    if (part.width) image.width = part.width;
+		    if (part.height) image.height = part.height;
+		    return image;
+		  }
+
+		  function safeImageSrc(value) {
+		    const src = String(value || "").trim();
+		    if (!src) return "";
+		    if (/^https?:\/\//i.test(src) || src.startsWith("data:image/")) return src.slice(0, 500);
+		    if (src.startsWith("//")) return `https:${src}`.slice(0, 500);
+		    return "";
+		  }
+
+		  function clampImageSize(value) {
+		    const number = Number(value) || 0;
+		    if (!number) return 0;
+		    return Math.max(1, Math.min(128, Math.round(number)));
+		  }
 
   function messageAuthor(message, chat) {
     if (message.direction === "out") return "You";

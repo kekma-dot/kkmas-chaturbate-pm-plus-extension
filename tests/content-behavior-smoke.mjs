@@ -152,6 +152,101 @@ async function testClosedBoundNativePmDoesNotReopenFromScan(browser) {
   assert.equal(renderedCount, 0, "closed bound native PM must not reopen itself from DOM scan updates");
 }
 
+async function testRichPmContentRendersEmoticons(browser) {
+  const page = await loadChaturbateLikePage(browser, `
+    <style>
+      .user-popover { width: 380px; height: 220px; }
+      .user-popover .action, .user-popover a { display: block; min-height: 42px; }
+      .ChatTabContents { width: 520px; height: 560px; }
+    </style>
+    <aside class="user-popover">
+      <a href="#">kaepee</a>
+      <div class="action">Send private message</div>
+      <div class="action">Mention this user</div>
+    </aside>
+    <section class="ChatTabContents TheatermodeChatDivPm">
+      <div class="msg-list-fvm message-list">
+        <div class="msg-row">kaepee<span class="msg-text"><span class="new-message-badge">New</span><img class="emoticonImage" src="https://static-pub.highwebmedia.com/emoticons/hihi.gif" alt=":hihi" width="25" height="25"><span> and roses </span><img class="emoji" src="https://static-pub.highwebmedia.com/emoji/rose.png" alt="&#x1F339;" width="18" height="18"></span></div>
+        <div class="msg-row">kaepee<span class="msg-text"><img class="emoticonImage" src="https://static-pub.highwebmedia.com/emoticons/hihi.gif" alt=":hihi" width="25" height="25"></span></div>
+      </div>
+      <div class="customInput noScrollbar chat-input-field inputFieldChatPlaceholder theatermodeInputFieldPm" contenteditable="true"></div>
+      <button class="Button SendButton SplitMode pm">Send</button>
+    </section>
+  `);
+  await injectExtension(page);
+  await page.waitForSelector(".cbm-popover-action", { timeout: 1500 });
+  await page.click(".cbm-popover-action");
+  await page.waitForSelector(".cbm-chat-window", { timeout: 3000 });
+
+  const rendered = await page.evaluate(() => {
+    const bubble = document.querySelector(".cbm-bubble");
+    return {
+      text: bubble?.textContent || "",
+      imageAlts: Array.from(bubble?.querySelectorAll("img") || []).map((img) => img.alt),
+      imageKinds: Array.from(bubble?.querySelectorAll("img") || []).map((img) => img.dataset.kind || ""),
+      imageOnlyHeight: document.querySelector(".cbm-bubble-image-only img")?.getBoundingClientRect().height || 0
+    };
+  });
+
+  assert(!rendered.text.includes("New"), `service badge must be filtered from bubble text: ${JSON.stringify(rendered)}`);
+  assert(rendered.text.includes("and roses"), `text nodes around rich images must render: ${JSON.stringify(rendered)}`);
+  assert.deepEqual(rendered.imageAlts, [":hihi", "\u{1F339}"]);
+  assert.deepEqual(rendered.imageKinds, ["emoticon", "emoji"]);
+  assert(rendered.imageOnlyHeight >= 40, `image-only emoticons should render larger than inline text emoji: ${JSON.stringify(rendered)}`);
+}
+
+async function testPmPhotoAttachmentRendersSafeCard(browser) {
+  const page = await loadChaturbateLikePage(browser, `
+    <style>
+      .user-popover { width: 380px; height: 220px; }
+      .user-popover .action, .user-popover a { display: block; min-height: 42px; }
+      .ChatTabContents { width: 520px; height: 560px; }
+    </style>
+    <script>window.__photoOpenCount = 0;</script>
+    <aside class="user-popover">
+      <a href="#">kaepee</a>
+      <div class="action">Send private message</div>
+      <div class="action">Mention this user</div>
+    </aside>
+    <section class="ChatTabContents TheatermodeChatDivPm">
+      <div class="msg-list-fvm message-list">
+        <div class="msg-row photo-attachment unopened-media">kaepee<span class="msg-text"><span class="new-message-badge">New</span><img class="pm-photo-thumbnail private-media-preview" src="https://media-secret.chaturbate.test/private/raw-member-photo.jpg?token=super-secret" width="96" height="80" onclick="window.__photoOpenCount += 1"></span></div>
+      </div>
+      <div class="customInput noScrollbar chat-input-field inputFieldChatPlaceholder theatermodeInputFieldPm" contenteditable="true"></div>
+      <button class="Button SendButton SplitMode pm">Send</button>
+    </section>
+  `);
+  await injectExtension(page);
+  await page.waitForSelector(".cbm-popover-action", { timeout: 1500 });
+  await page.click(".cbm-popover-action");
+  await page.waitForSelector(".cbm-attachment-card", { timeout: 3000 });
+
+  const before = await page.evaluate(() => ({
+    bubbleText: document.querySelector(".cbm-bubble")?.textContent || "",
+    cardText: document.querySelector(".cbm-attachment-card")?.textContent || "",
+    cardImageCount: document.querySelectorAll(".cbm-attachment-card img").length,
+    previewSrc: document.querySelector(".cbm-attachment-card img")?.src || "",
+    previewFilter: getComputedStyle(document.querySelector(".cbm-attachment-card img")).filter,
+    openCount: window.__photoOpenCount || 0
+  }));
+  assert.equal(before.bubbleText.includes("New"), false, `service New badge must not render in PM+ photo card: ${JSON.stringify(before)}`);
+  assert.equal(before.cardText.includes("Photo received"), true, `photo card should be visible: ${JSON.stringify(before)}`);
+  assert.equal(before.cardImageCount, 1, "PM+ must render the already-visible native thumbnail preview");
+  assert(before.previewSrc.includes("raw-member-photo"), `PM+ should reuse the visible thumbnail src only: ${JSON.stringify(before)}`);
+  assert.notEqual(before.previewFilter, "none", `unopened PM photo preview must stay blurred: ${JSON.stringify(before)}`);
+  assert.equal(before.openCount, 0, "rendering the card must not auto-open the native photo");
+
+  await page.evaluate(() => {
+    const preview = document.querySelector(".cbm-photo-preview");
+    preview.click();
+    preview.click();
+  });
+  await page.waitForTimeout(100);
+
+  const after = await page.evaluate(() => window.__photoOpenCount || 0);
+  assert.equal(after, 1, "rapid PM+ clicks must invoke the native photo action once");
+}
+
 async function testSendButtonSurvivesHostilePageCss(browser) {
   const page = await loadChaturbateLikePage(browser, `
     <style>
@@ -239,6 +334,8 @@ await withBrowser(async (browser) => {
   await testUnboundNativePmDoesNotAutoOpen(browser);
   await testExplicitMultichatOpensOnlyUsernameWindow(browser);
   await testClosedBoundNativePmDoesNotReopenFromScan(browser);
+  await testRichPmContentRendersEmoticons(browser);
+  await testPmPhotoAttachmentRendersSafeCard(browser);
   await testSendButtonSurvivesHostilePageCss(browser);
   await testResizeClosesExtraWindows(browser);
 });

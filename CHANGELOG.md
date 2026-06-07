@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.2 Beta - 2026-06-07
+
+- Fixed Chaturbate emoticon and emoji rendering in PM+ message bubbles.
+- Added a safe PM photo attachment bridge: inbound photos render as `Photo received` cards instead of `New` text placeholders.
+- Rendered the already-visible native PM photo thumbnail in blur inside PM+, without unblurring or fetching full-size media.
+- Added explicit `Open photo` handling through the native Chaturbate PM action, with rapid-click protection.
+- Preserved privacy boundaries: no PM photo downloads, unblurring, direct fetches, raw media URLs, tokens, or DOM refs in ChatStore.
+
 ## 0.5.1 Beta - 2026-06-06
 
 - Added an opt-in network diagnostics probe for controlled Chaturbate PM debugging.

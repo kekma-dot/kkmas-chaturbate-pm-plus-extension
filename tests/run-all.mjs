@@ -10,7 +10,7 @@ const unitCommands = [
   ["node", ["tests/compose-unit.mjs"]],
   ["node", ["tests/emoticons-unit.mjs"]],
   ["node", ["tests/release-harness-unit.mjs"]],
-  ["node", ["tests/version-051-contract.mjs"]]
+  ["node", ["tests/version-052-contract.mjs"]]
 ];
 
 const checkCommands = [

@@ -3,8 +3,8 @@
   "name": "KKMA's Chaturbate PM+ Extension",
   "short_name": "Chaturbate PM+",
   "description": "Private beta extension for multi-window PM chat on Chaturbate.",
-  "version": "0.5.1",
-  "version_name": "0.5.1 Beta",
+  "version": "0.5.2",
+  "version_name": "0.5.2 Beta",
   "permissions": ["storage"],
   "host_permissions": [
     "https://*.chaturbate.com/*",

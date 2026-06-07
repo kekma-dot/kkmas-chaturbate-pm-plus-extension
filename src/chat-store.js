@@ -1,5 +1,7 @@
 (function () {
   const VERSION = 1;
+  const MAX_MESSAGE_PARTS = 24;
+  const MAX_MESSAGE_ATTACHMENTS = 4;
 
   function createChatStore() {
     const chats = new Map();
@@ -155,14 +157,18 @@
 
   function normalizeMessage(input = {}) {
     if (!input || typeof input !== "object") return null;
-    const text = input.text === undefined ? "" : String(input.text);
+    const parts = normalizeParts(input.parts);
+    const attachments = normalizeAttachments(input.attachments);
+    const text = input.text === undefined ? textFromParts(parts) : String(input.text || textFromParts(parts));
     const messageId = input.messageId === undefined ? "" : String(input.messageId);
-    if (!text && !messageId) return null;
+    if (!text && !messageId && parts.length === 0 && attachments.length === 0) return null;
 
     return {
       messageId,
       direction: input.direction === "out" ? "out" : "in",
       text,
+      parts: parts.length ? parts : normalizeParts([{ type: "text", text }]),
+      attachments,
       ts: Number(input.ts) || 0,
       source: String(input.source || ""),
       rawKind: String(input.rawKind || ""),
@@ -176,9 +182,99 @@
       "sig",
       message.direction || "",
       message.text || "",
+      partsKey(message.parts),
+      attachmentsKey(message.attachments),
       Number(message.ts) || 0,
       message.rawKind || ""
     ].join("|");
+  }
+
+  function normalizeParts(input) {
+    if (!Array.isArray(input)) return [];
+    const parts = [];
+    input.forEach((part) => {
+      if (!part || parts.length >= MAX_MESSAGE_PARTS) return;
+      if (part.type === "image") {
+        const src = normalizeImageSrc(part.src);
+        if (!src) return;
+        parts.push({
+          type: "image",
+          kind: part.kind === "emoji" ? "emoji" : "emoticon",
+          src,
+          alt: normalizePartText(part.alt, 80),
+          title: normalizePartText(part.title, 80),
+          width: clampImageSize(part.width),
+          height: clampImageSize(part.height)
+        });
+        return;
+      }
+      const text = normalizePartText(part.text);
+      if (text) parts.push({ type: "text", text });
+    });
+    return parts;
+  }
+
+  function textFromParts(parts) {
+    return (parts || [])
+      .map((part) => part.type === "image" ? part.alt || part.title || "" : part.text || "")
+      .join("")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function partsKey(parts) {
+    return (parts || [])
+      .map((part) => part.type === "image" ? `${part.kind}:${part.alt || part.title || ""}:${part.src || ""}` : part.text || "")
+      .join("");
+  }
+
+  function normalizeAttachments(input) {
+    if (!Array.isArray(input)) return [];
+    const attachments = [];
+    input.forEach((attachment) => {
+      if (!attachment || attachments.length >= MAX_MESSAGE_ATTACHMENTS) return;
+      if (attachment.type !== "photo") return;
+      const id = normalizePartText(attachment.id, 80);
+      if (!id) return;
+      const state = ["unopened", "opened", "unknown"].includes(attachment.state) ? attachment.state : "unknown";
+      attachments.push({
+        id,
+        type: "photo",
+        state,
+        previewPolicy: attachment.previewPolicy === "visible-thumbnail" ? "visible-thumbnail" : "none",
+        previewUrl: "",
+        previewIsBlurred: attachment.previewIsBlurred === true || attachment.previewIsBlurred === false
+          ? attachment.previewIsBlurred
+          : "unknown",
+        actionKind: attachment.actionKind === "open-photo" ? "open-photo" : "",
+        nativeActionKey: normalizePartText(attachment.nativeActionKey, 120)
+      });
+    });
+    return attachments;
+  }
+
+  function attachmentsKey(attachments) {
+    return (attachments || [])
+      .map((attachment) => `${attachment.type}:${attachment.id}:${attachment.state}:${attachment.actionKind}`)
+      .join("");
+  }
+
+  function normalizePartText(value, maxLength = 500) {
+    return String(value || "").replace(/\s+/g, " ").slice(0, maxLength);
+  }
+
+  function normalizeImageSrc(value) {
+    const src = String(value || "").trim();
+    if (!src) return "";
+    if (/^https?:\/\//i.test(src) || src.startsWith("data:image/")) return src.slice(0, 500);
+    if (src.startsWith("//")) return `https:${src}`.slice(0, 500);
+    return "";
+  }
+
+  function clampImageSize(value) {
+    const number = Number(value) || 0;
+    if (!number) return 0;
+    return Math.max(1, Math.min(128, Math.round(number)));
   }
 
   function mergeMessageSource(message, source) {
@@ -214,6 +310,8 @@
       messageId: message.messageId,
       direction: message.direction,
       text: message.text,
+      parts: normalizeParts(message.parts),
+      attachments: normalizeAttachments(message.attachments),
       ts: message.ts,
       source: message.source,
       rawKind: message.rawKind,

@@ -9,10 +9,10 @@ const readme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf8");
 const changelog = fs.readFileSync(path.join(projectRoot, "CHANGELOG.md"), "utf8");
 const contentSource = fs.readFileSync(path.join(projectRoot, "src", "content.js"), "utf8");
 
-assert.equal(manifest.version, "0.5.1");
-assert.equal(manifest.version_name, "0.5.1 Beta");
-assert.equal(readme.includes("Current version: `0.5.1 Beta`"), true);
-assert.equal(changelog.includes("## 0.5.1 Beta - 2026-06-06"), true);
+assert.equal(manifest.version, "0.5.2");
+assert.equal(manifest.version_name, "0.5.2 Beta");
+assert.equal(readme.includes("Current version: `0.5.2 Beta`"), true);
+assert.equal(changelog.includes("## 0.5.2 Beta - 2026-06-07"), true);
 
 const earlyScript = manifest.content_scripts[0];
 const idleScript = manifest.content_scripts[1];
@@ -127,4 +127,4 @@ assert.equal(typeof context.window.CBMultichatDebug.enableNetworkProbeForNextRel
 assert.equal(typeof context.window.CBMultichatDebug.disableNetworkProbeForNextReload, "function");
 assert.equal(typeof context.window.CBMultichatDebug.clearNetworkDiagnostics, "function");
 
-console.log("version-051-contract ok");
+console.log("version-052-contract ok");

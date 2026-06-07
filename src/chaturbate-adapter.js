@@ -67,9 +67,16 @@
 	    { shortcut: ":love", label: "love" },
 	    { shortcut: ":thanks", label: "thanks" },
 	    { shortcut: ":wave", label: "wave" }
-	  ];
-	  const CHATURBATE_EMOTICON_AUTOCOMPLETE_ENDPOINT = "/api/ts/emoticons/autocomplete/";
-	  const CHATURBATE_NON_ROOM_PATHS = new Set([
+		  ];
+		  const CHATURBATE_EMOTICON_AUTOCOMPLETE_ENDPOINT = "/api/ts/emoticons/autocomplete/";
+		  const MAX_MESSAGE_PARTS = 24;
+		  const MAX_MESSAGE_IMAGES = 8;
+		  const MAX_MESSAGE_ATTACHMENTS = 4;
+		  const RICH_MESSAGE_IMAGE_RE = /emoticon|emoji|smiley|sticker/i;
+		  const NON_MESSAGE_IMAGE_RE = /avatar|profile|photo|media|thumbnail|private|preview/i;
+		  const PHOTO_ATTACHMENT_RE = /photo|image|media|attachment|thumbnail|private|preview/i;
+		  const PHOTO_OPEN_ACTION_RE = /open\s+photo|view\s+photo|show\s+photo|open\s+image|view\s+image/i;
+		  const CHATURBATE_NON_ROOM_PATHS = new Set([
 	    "accounts",
 	    "api",
 	    "apps",
@@ -96,18 +103,153 @@
 	    return (node?.textContent || "").replace(/\s+/g, " ").trim();
 	  }
 
-	  function compactLower(value) {
-	    return String(value || "").replace(/\s+/g, "").toLowerCase();
-	  }
+		  function compactLower(value) {
+		    return String(value || "").replace(/\s+/g, "").toLowerCase();
+		  }
 
-  function createMessage({ id, from, text, direction, ts }) {
-    return {
-      id: id || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      from: from || "member",
-      text: text || "",
-      direction: direction || "in",
-      ts: ts || Date.now()
-    };
+		  function normalizePartText(value, maxLength = 500) {
+		    return String(value || "").replace(/\s+/g, " ").slice(0, maxLength);
+		  }
+
+		  function appendTextPart(parts, value) {
+		    const text = normalizePartText(value);
+		    if (!text) return;
+		    const last = parts[parts.length - 1];
+		    if (last?.type === "text") {
+		      last.text = `${last.text}${text}`;
+		      return;
+		    }
+		    parts.push({ type: "text", text });
+		  }
+
+		  function normalizeMessageParts(parts, fallbackText = "") {
+		    const normalized = [];
+		    const inputParts = Array.isArray(parts) ? parts : [];
+		    inputParts.forEach((part) => {
+		      if (!part || normalized.length >= MAX_MESSAGE_PARTS) return;
+		      if (part.type === "image") {
+		        const src = normalizeImageSrc(part.src);
+		        if (!src) return;
+		        normalized.push({
+		          type: "image",
+		          kind: part.kind === "emoji" ? "emoji" : "emoticon",
+		          src,
+		          alt: normalizePartText(part.alt, 80),
+		          title: normalizePartText(part.title, 80),
+		          width: clampImageSize(part.width),
+		          height: clampImageSize(part.height)
+		        });
+		        return;
+		      }
+		      appendTextPart(normalized, part.text);
+		    });
+
+		    if (normalized.length === 0 && fallbackText) {
+		      appendTextPart(normalized, fallbackText);
+		    }
+		    return trimPartEdges(normalized).slice(0, MAX_MESSAGE_PARTS);
+		  }
+
+		  function trimPartEdges(parts) {
+		    const trimmed = parts.map((part) => ({ ...part }));
+		    if (trimmed[0]?.type === "text") trimmed[0].text = trimmed[0].text.trimStart();
+		    if (trimmed[trimmed.length - 1]?.type === "text") {
+		      trimmed[trimmed.length - 1].text = trimmed[trimmed.length - 1].text.trimEnd();
+		    }
+		    return trimmed.filter((part) => part.type !== "text" || part.text);
+		  }
+
+		  function textFromParts(parts) {
+		    return (parts || [])
+		      .map((part) => part.type === "image" ? part.alt || part.title || "" : part.text || "")
+		      .join("")
+		      .replace(/\s+/g, " ")
+		      .trim();
+		  }
+
+		  function messagePartsSignature(parts) {
+		    return (parts || [])
+		      .map((part) => part.type === "image" ? `${part.kind}:${part.alt || part.title || ""}` : part.text || "")
+		      .join("")
+		      .slice(0, 40);
+		  }
+
+		  function normalizeImageSrc(src) {
+		    const value = String(src || "").trim();
+		    if (!value) return "";
+		    if (/^https?:\/\//i.test(value) || value.startsWith("data:image/")) return value.slice(0, 500);
+		    if (value.startsWith("//")) return `https:${value}`.slice(0, 500);
+		    return "";
+		  }
+
+		  function clampImageSize(value) {
+		    const number = Number(value) || 0;
+		    if (!number) return 0;
+		    return Math.max(1, Math.min(128, Math.round(number)));
+		  }
+
+		  function stripLeadingTextFromParts(parts, prefix) {
+		    let remaining = String(prefix || "").length;
+		    const stripped = [];
+		    (parts || []).forEach((part) => {
+		      if (part.type !== "text" || remaining <= 0) {
+		        stripped.push({ ...part });
+		        return;
+		      }
+		      const text = part.text || "";
+		      if (text.length <= remaining) {
+		        remaining -= text.length;
+		        return;
+		      }
+		      stripped.push({ ...part, text: text.slice(remaining).trimStart() });
+		      remaining = 0;
+		    });
+		    return normalizeMessageParts(stripped);
+		  }
+
+		  function normalizeMessageAttachments(input) {
+		    if (!Array.isArray(input)) return [];
+		    return input.slice(0, MAX_MESSAGE_ATTACHMENTS).map((attachment) => {
+		      if (!attachment || attachment.type !== "photo") return null;
+		      const id = normalizePartText(attachment.id, 80);
+		      if (!id) return null;
+		      const state = ["unopened", "opened", "unknown"].includes(attachment.state) ? attachment.state : "unknown";
+		      const previewPolicy = attachment.previewPolicy === "visible-thumbnail" ? "visible-thumbnail" : "none";
+		      const previewUrl = previewPolicy === "visible-thumbnail"
+		        ? normalizeImageSrc(attachment.previewUrl)
+		        : "";
+		      return {
+		        id,
+		        type: "photo",
+		        state,
+		        previewPolicy,
+		        previewUrl,
+		        previewIsBlurred: attachment.previewIsBlurred === true || attachment.previewIsBlurred === false
+		          ? attachment.previewIsBlurred
+		          : "unknown",
+		        actionKind: attachment.actionKind === "open-photo" ? "open-photo" : "",
+		        nativeActionKey: normalizePartText(attachment.nativeActionKey, 120)
+		      };
+		    }).filter(Boolean);
+		  }
+
+		  function messageAttachmentIdentitySignature(attachments) {
+		    return (attachments || []).map((attachment) => `${attachment.type || ""}:${attachment.id || ""}`).join("");
+		  }
+
+	  function createMessage({ id, from, text, parts, attachments, direction, ts }) {
+	    const messageParts = normalizeMessageParts(parts, text);
+	    const fallbackText = text || textFromParts(messageParts);
+	    const messageAttachments = normalizeMessageAttachments(attachments);
+	    return {
+	      id: id || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+	      from: from || "member",
+	      text: fallbackText || "",
+	      parts: messageParts,
+	      attachments: messageAttachments,
+	      direction: direction || "in",
+	      ts: ts || Date.now()
+	    };
   }
 
   class BaseAdapter extends EventTarget {
@@ -415,8 +557,9 @@
 	      return best;
 	    }
 
-	    activateNativeAction(node) {
-	      const eventTypes = ["pointerdown", "mousedown", "mouseup", "click"];
+	    activateNativeAction(node, options = {}) {
+	      const singleClick = options.singleClick === true;
+	      const eventTypes = singleClick ? ["pointerdown", "mousedown", "mouseup"] : ["pointerdown", "mousedown", "mouseup", "click"];
 	      eventTypes.forEach((type) => {
 	        const EventCtor = type.startsWith("pointer") && typeof PointerEvent !== "undefined"
 	          ? PointerEvent
@@ -431,6 +574,16 @@
 	        }));
 	      });
 	      if (typeof node.click === "function") node.click();
+	      else if (singleClick) {
+	        node.dispatchEvent(new MouseEvent("click", {
+	          bubbles: true,
+	          cancelable: true,
+	          composed: true,
+	          button: 0,
+	          buttons: 0,
+	          view: window
+	        }));
+	      }
 	    }
 
 	    findPmRoots() {
@@ -489,15 +642,17 @@
 
 	      return Array.from(messageNodes)
 		        .map((node, index) => {
-	          const parsed = this.parseMessageNode(node, chatId);
-	          if (!this.isUserMessage(parsed.text)) return null;
-	          return createMessage({
-	            id: `${chatId}-${index}-${parsed.text.slice(0, 40)}`,
-	            from: parsed.from,
-	            text: parsed.text,
-	            direction: parsed.direction
-	          });
-	        })
+			          const parsed = this.parseMessageNode(node, chatId, index);
+			          if (!this.isUserMessage(parsed.text, parsed.parts, parsed.attachments)) return null;
+			          return createMessage({
+			            id: this.messageIdForParsed(chatId, index, parsed),
+			            from: parsed.from,
+			            text: parsed.text,
+			            parts: parsed.parts,
+			            attachments: parsed.attachments,
+			            direction: parsed.direction
+			          });
+			        })
 	        .filter(Boolean)
 	        .slice(-80);
 	    }
@@ -517,43 +672,58 @@
 	        .filter((node) => this.looksLikeMessageNode(node));
 	    }
 
-	    looksLikeMessageNode(node) {
-	      const text = textFromNode(node);
-	      if (!text) return false;
-	      if (node.querySelector?.(CHATURBATE_PM_INPUT_SELECTOR)) return false;
-	      if (node.querySelector?.(CHATURBATE_PM_SEND_SELECTOR)) return false;
+		    looksLikeMessageNode(node) {
+		      const text = textFromNode(node);
+			      const hasRichMessagePart = this.extractMessageParts(node).some((part) => part.type === "image");
+			      const hasAttachment = this.hasMessageAttachment(node);
+			      if (!text && !hasRichMessagePart && !hasAttachment) return false;
+		      if (node.querySelector?.(CHATURBATE_PM_INPUT_SELECTOR)) return false;
+		      if (node.querySelector?.(CHATURBATE_PM_SEND_SELECTOR)) return false;
 	      if (/PMControlBar|control-bar|searchUserInput|customInput/.test(String(node.className || ""))) return false;
 	      return true;
 	    }
 
-	    parseMessageNode(node, chatId) {
-	      const raw = this.extractMessageText(node);
-	      const fullText = textFromNode(node);
-	      const authorPrefix = this.extractMessageAuthorPrefix(fullText, raw);
+			    parseMessageNode(node, chatId, messageIndex = 0) {
+			      const contentNode = this.findMessageContentNode(node);
+			      const rawParts = this.extractMessageParts(contentNode || node);
+			      const attachments = this.extractMessageAttachments(node, chatId, messageIndex);
+			      const raw = textFromParts(rawParts) || (attachments.length ? "" : this.extractMessageText(node));
+		      const fullText = textFromNode(node);
+		      const authorPrefix = this.extractMessageAuthorPrefix(fullText, raw);
 	      const className = String(node.className || "");
 	      const selfName = this.selfName;
-	      const memberName = String(chatId || "");
-	      let direction = /my|sent|out|self|me/i.test(className) ? "out" : "in";
-	      let text = raw;
+		      const memberName = String(chatId || "");
+		      let direction = /my|sent|out|self|me/i.test(className) ? "out" : "in";
+		      let text = raw;
+		      let parts = rawParts;
 
-	      if (this.authorMatches(authorPrefix, selfName)) {
-	        direction = "out";
-	      } else if (this.authorMatches(authorPrefix, memberName)) {
-	        direction = "in";
-	      } else if (selfName && compactLower(raw).startsWith(compactLower(selfName))) {
-	        direction = "out";
-	        text = raw.slice(selfName.length).trim();
-	      } else if (memberName && compactLower(raw).startsWith(compactLower(memberName))) {
-	        direction = "in";
-	        text = raw.slice(memberName.length).trim();
-	      }
+		      if (this.authorMatches(authorPrefix, selfName) || (!authorPrefix && this.authorMatches(fullText, selfName))) {
+		        direction = "out";
+		      } else if (this.authorMatches(authorPrefix, memberName) || (!authorPrefix && this.authorMatches(fullText, memberName))) {
+		        direction = "in";
+		      } else if (selfName && compactLower(raw).startsWith(compactLower(selfName))) {
+		        direction = "out";
+		        text = raw.slice(selfName.length).trim();
+		        parts = stripLeadingTextFromParts(parts, selfName);
+		      } else if (memberName && compactLower(raw).startsWith(compactLower(memberName))) {
+		        direction = "in";
+		        text = raw.slice(memberName.length).trim();
+		        parts = stripLeadingTextFromParts(parts, memberName);
+		      }
 
-	      return {
-	        text: text || raw,
-	        direction,
-	        from: direction === "out" ? selfName || "You" : memberName || "member"
-	      };
-	    }
+			      return {
+			        text: text || textFromParts(parts) || raw,
+			        parts: normalizeMessageParts(parts, text || raw),
+			        attachments,
+			        direction,
+			        from: direction === "out" ? selfName || "You" : memberName || "member"
+		      };
+		    }
+
+		    messageIdForParsed(chatId, index, parsed) {
+		      const suffix = parsed.text || messagePartsSignature(parsed.parts) || messageAttachmentIdentitySignature(parsed.attachments);
+		      return `${chatId}-${index}-${String(suffix || "message").slice(0, 40)}`;
+		    }
 
 	    extractMessageAuthorPrefix(fullText, messageText) {
 	      if (!fullText || !messageText || fullText === messageText) return "";
@@ -567,17 +737,263 @@
 	      return compactLower(authorPrefix).endsWith(compactLower(username));
 	    }
 
-	    extractMessageText(node) {
-	      const leaf = node.matches?.(".msg-text") && !node.querySelector?.(".msg-text")
-	        ? node
-	        : Array.from(node.querySelectorAll?.(".msg-text") || []).find((item) => !item.querySelector?.(".msg-text"));
-	      return textFromNode(leaf || node);
-	    }
+		    findMessageContentNode(node) {
+		      const leaf = node.matches?.(".msg-text") && !node.querySelector?.(".msg-text")
+		        ? node
+		        : Array.from(node.querySelectorAll?.(".msg-text") || []).find((item) => !item.querySelector?.(".msg-text"));
+		      return leaf || node;
+		    }
 
-	    isUserMessage(text) {
-	      const value = String(text || "").replace(/\s+/g, " ").trim();
-	      if (value.length < 2 || value.length > 1000) return false;
-	      if (/^private conversation with\b/i.test(value)) return false;
+		    extractMessageText(node) {
+		      return textFromNode(this.findMessageContentNode(node));
+		    }
+
+			    extractMessageParts(node) {
+			      const parts = [];
+			      let imageCount = 0;
+			      const visit = (current, isRoot = false) => {
+			        if (!current || parts.length >= MAX_MESSAGE_PARTS) return;
+			        if (current.nodeType === 3) {
+			          appendTextPart(parts, current.nodeValue || current.textContent || "");
+			          return;
+			        }
+			        if (current.nodeType && current.nodeType !== 1) return;
+			        if (this.isServiceContentNode(current)) return;
+			        if (this.isPhotoMediaNode(current) || (!isRoot && this.isPhotoControlNode(current))) return;
+			        if (this.isRichMessageImage(current)) {
+		          if (imageCount >= MAX_MESSAGE_IMAGES) return;
+		          imageCount += 1;
+		          parts.push(this.parseRichMessageImage(current));
+		          return;
+		        }
+			        const children = Array.from(current.childNodes || current.children || []);
+			        if (children.length > 0) {
+			          children.forEach((child) => visit(child, false));
+			          return;
+			        }
+			        appendTextPart(parts, current.textContent || "");
+			      };
+			      visit(node, true);
+			      return normalizeMessageParts(parts);
+			    }
+
+		    isServiceContentNode(node) {
+		      if (!node || String(node.tagName || "").toLowerCase() === "img") return false;
+		      const text = textFromNode(node);
+		      const fingerprint = [
+		        node.className,
+		        node.getAttribute?.("data-testid"),
+		        node.getAttribute?.("aria-label"),
+		        node.getAttribute?.("role")
+		      ].join(" ");
+		      if (/PMControlBar|control-bar|searchUserInput|customInput/i.test(fingerprint)) return true;
+		      if (/^new$/i.test(text)) return true;
+		      return /^loading more messages$/i.test(text);
+		    }
+
+		    isRichMessageImage(node) {
+		      if (String(node?.tagName || "").toLowerCase() !== "img") return false;
+		      const src = normalizeImageSrc(node.currentSrc || node.src || node.getAttribute?.("src"));
+		      if (!src) return false;
+		      const alt = node.alt || node.getAttribute?.("alt") || "";
+		      const title = node.title || node.getAttribute?.("title") || "";
+		      const fingerprint = [
+		        node.className,
+		        node.getAttribute?.("data-testid"),
+		        node.getAttribute?.("data-emoticon"),
+		        node.getAttribute?.("data-emoji"),
+		        alt,
+		        title
+		      ].join(" ");
+		      if (NON_MESSAGE_IMAGE_RE.test(fingerprint) && !RICH_MESSAGE_IMAGE_RE.test(fingerprint)) return false;
+		      return RICH_MESSAGE_IMAGE_RE.test(fingerprint) ||
+		        /:[a-z0-9_-]{1,40}/i.test(`${alt} ${title}`) ||
+		        /[\u{1F000}-\u{1FAFF}]/u.test(`${alt} ${title}`);
+		    }
+
+		    parseRichMessageImage(node) {
+		      const alt = node.alt || node.getAttribute?.("alt") || "";
+		      const title = node.title || node.getAttribute?.("title") || "";
+		      const fingerprint = `${node.className || ""} ${alt} ${title}`;
+		      return {
+		        type: "image",
+		        kind: /emoji/i.test(fingerprint) && !/emoticon/i.test(fingerprint) ? "emoji" : "emoticon",
+		        src: normalizeImageSrc(node.currentSrc || node.src || node.getAttribute?.("src")),
+		        alt: normalizePartText(alt || title, 80),
+		        title: normalizePartText(title, 80),
+		        width: clampImageSize(node.width || node.getAttribute?.("width")),
+		        height: clampImageSize(node.height || node.getAttribute?.("height"))
+		      };
+		    }
+
+			    hasMessageAttachment(node) {
+			      return this.findPhotoAttachmentContainers(node).length > 0;
+			    }
+
+			    extractMessageAttachments(node, chatId, messageIndex = 0) {
+			      return normalizeMessageAttachments(this.findPhotoAttachmentContainers(node)
+			        .slice(0, MAX_MESSAGE_ATTACHMENTS)
+			        .map((container, attachmentIndex) => this.parsePhotoAttachment(container, chatId, messageIndex, attachmentIndex)));
+			    }
+
+			    parsePhotoAttachment(container, chatId, messageIndex, attachmentIndex) {
+			      const action = this.findPhotoOpenControl(container);
+			      const state = this.classifyPhotoAttachmentState(container);
+			      return {
+			        id: `photo-${messageIndex}-${attachmentIndex}`,
+			        type: "photo",
+			        state,
+			        previewPolicy: "visible-thumbnail",
+			        previewUrl: this.photoPreviewUrl(container),
+			        previewIsBlurred: state !== "opened",
+			        actionKind: action ? "open-photo" : "",
+			        nativeActionKey: `${chatId}:${messageIndex}:${attachmentIndex}:open-photo`
+			      };
+			    }
+
+			    findPhotoAttachmentContainers(node) {
+			      const containers = [];
+			      const seen = new Set();
+			      const add = (container) => {
+			        if (!container || seen.has(container)) return;
+			        seen.add(container);
+			        containers.push(container);
+			      };
+			      const visit = (current) => {
+			        if (!current || current.nodeType !== 1) return;
+			        if (this.isPhotoAttachmentContainer(current)) {
+			          add(current);
+			          return;
+			        }
+			        if (this.isPhotoMediaNode(current) || this.isPhotoControlNode(current)) {
+			          add(this.nearestPhotoAttachmentContainer(current, node));
+			          return;
+			        }
+			        Array.from(current.children || []).forEach(visit);
+			      };
+			      visit(node);
+			      return containers;
+			    }
+
+			    nearestPhotoAttachmentContainer(node, root) {
+			      let current = node;
+			      let best = node;
+			      while (current && current !== root?.parentElement) {
+			        const fingerprint = `${current.className || ""} ${current.getAttribute?.("data-testid") || ""}`;
+			        if (/msg-row|message|photo|media|attachment|private/i.test(fingerprint)) best = current;
+			        if (current === root) break;
+			        current = current.parentElement;
+			      }
+			      return best || root || node;
+			    }
+
+			    isPhotoAttachmentContainer(node) {
+			      if (!node || node.nodeType !== 1) return false;
+			      const fingerprint = [
+			        node.className,
+			        node.getAttribute?.("data-testid"),
+			        node.getAttribute?.("aria-label"),
+			        node.getAttribute?.("role"),
+			        textFromNode(node)
+			      ].join(" ");
+			      if (!PHOTO_ATTACHMENT_RE.test(fingerprint) && !PHOTO_OPEN_ACTION_RE.test(fingerprint)) return false;
+			      return this.subtreeHasPhotoMedia(node) || Boolean(this.findPhotoOpenControl(node));
+			    }
+
+			    subtreeHasPhotoMedia(node) {
+			      if (this.isPhotoMediaNode(node)) return true;
+			      return Array.from(node.querySelectorAll?.("img") || []).some((image) => this.isPhotoMediaNode(image));
+			    }
+
+			    isPhotoMediaNode(node) {
+			      if (String(node?.tagName || "").toLowerCase() !== "img") return false;
+			      const fingerprint = [
+			        node.className,
+			        node.getAttribute?.("data-testid"),
+			        node.getAttribute?.("aria-label"),
+			        node.getAttribute?.("role"),
+			        node.alt,
+			        node.title,
+			        node.currentSrc || node.src || node.getAttribute?.("src")
+			      ].join(" ");
+			      return PHOTO_ATTACHMENT_RE.test(fingerprint) && !RICH_MESSAGE_IMAGE_RE.test(fingerprint);
+			    }
+
+			    isPhotoControlNode(node) {
+			      if (!node || node.nodeType !== 1) return false;
+			      const fingerprint = [
+			        textFromNode(node),
+			        node.className,
+			        node.getAttribute?.("aria-label"),
+			        node.getAttribute?.("title"),
+			        node.getAttribute?.("role")
+			      ].join(" ");
+			      return PHOTO_OPEN_ACTION_RE.test(fingerprint);
+			    }
+
+			    findPhotoOpenControl(container) {
+			      const candidates = Array.from(container.querySelectorAll?.("a, button, [role='button'], div, span") || []);
+			      const isInteractive = (node) => {
+			        const tag = String(node?.tagName || "").toLowerCase();
+			        return tag === "a" || tag === "button" || /button/i.test(node?.getAttribute?.("role") || "");
+			      };
+			      const controls = [
+			        ...candidates.filter(isInteractive),
+			        ...candidates.filter((node) => !isInteractive(node)),
+			        container
+			      ];
+			      return controls.find((control) => this.isPhotoControlNode(control)) ||
+			        this.firstPhotoMediaNode(container);
+			    }
+
+			    firstPhotoMediaNode(container) {
+			      if (this.isPhotoMediaNode(container)) return container;
+			      return Array.from(container.querySelectorAll?.("img") || []).find((image) => this.isPhotoMediaNode(image)) || null;
+			    }
+
+			    photoPreviewUrl(container) {
+			      const image = this.firstPhotoMediaNode(container);
+			      return normalizeImageSrc(image?.currentSrc || image?.src || image?.getAttribute?.("src"));
+			    }
+
+			    classifyPhotoAttachmentState(container) {
+			      const text = `${textFromNode(container)} ${container?.className || ""} ${container?.getAttribute?.("aria-label") || ""}`.toLowerCase();
+			      if (/unopened|not\s+opened|unread|new\s+photo/.test(text)) return "unopened";
+			      if (/opened|viewed|read/.test(text)) return "opened";
+			      return "unknown";
+			    }
+
+			    openAttachment(chatId, messageId, attachmentId) {
+			      const chat = this.chats.get(chatId);
+			      if (!chat?.root?.isConnected) return { ok: false, error: "Chat root unavailable" };
+			      const action = this.resolveAttachmentAction(chat.root, chatId, messageId, attachmentId);
+			      if (!action?.isConnected) return { ok: false, error: "Photo action unavailable" };
+			      this.activateNativeAction(action, { singleClick: true });
+			      this.scan();
+			      return { ok: true };
+			    }
+
+			    resolveAttachmentAction(root, chatId, messageId, attachmentId) {
+			      const nodes = Array.from(this.findMessageNodes(root));
+			      for (let index = 0; index < nodes.length; index += 1) {
+			        const parsed = this.parseMessageNode(nodes[index], chatId, index);
+			        if (this.messageIdForParsed(chatId, index, parsed) !== messageId) continue;
+			        const containers = this.findPhotoAttachmentContainers(nodes[index]).slice(0, MAX_MESSAGE_ATTACHMENTS);
+			        const attachmentIndex = containers.findIndex((_, itemIndex) => `photo-${index}-${itemIndex}` === attachmentId);
+			        if (attachmentIndex < 0) continue;
+			        return this.findPhotoOpenControl(containers[attachmentIndex]);
+			      }
+			      return null;
+			    }
+
+			    isUserMessage(text, parts = [], attachments = []) {
+			      const value = String(text || "").replace(/\s+/g, " ").trim();
+			      const hasRichContent = Array.isArray(parts) && parts.some((part) => part.type === "image");
+			      const hasAttachment = Array.isArray(attachments) && attachments.length > 0;
+			      if ((!value && !hasRichContent && !hasAttachment) || value.length > 1000) return false;
+			      if (value.length < 2 && !hasRichContent && !hasAttachment) return false;
+		      if (/^new$/i.test(value)) return false;
+		      if (/^private conversation with\b/i.test(value)) return false;
 	      if (/^caution:\s*the chaturbate team will never contact you/i.test(value)) return false;
 	      if (/^loading more messages$/i.test(value)) return false;
 	      if (/^\(ctrl\+l to close\)$/i.test(value)) return false;
